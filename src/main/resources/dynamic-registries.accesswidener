@@ -1,0 +1,12 @@
+accessWidener v2 named
+accessible method net/minecraft/registry/entry/RegistryEntry$Reference setRegistryKey (Lnet/minecraft/registry/RegistryKey;)V
+accessible field net/minecraft/registry/SimpleRegistry keyToEntry Ljava/util/Map;
+accessible field net/minecraft/registry/SimpleRegistry idToEntry Ljava/util/Map;
+accessible field net/minecraft/registry/SimpleRegistry valueToEntry Ljava/util/Map;
+accessible field net/minecraft/registry/SimpleRegistry rawIdToEntry Lit/unimi/dsi/fastutil/objects/ObjectList;
+accessible field net/minecraft/registry/SimpleRegistry entryToRawId Lit/unimi/dsi/fastutil/objects/Reference2IntMap;
+accessible field net/minecraft/registry/SimpleRegistry keyToEntryInfo Ljava/util/Map;
+accessible field net/minecraft/registry/SimpleRegistry tags Ljava/util/Map;
+accessible field net/minecraft/registry/entry/RegistryEntryList$Named entries Ljava/util/List;
+accessible class net/minecraft/registry/RegistryLoader$RegistryLoadable
+accessible class net/minecraft/registry/RegistryLoader$Loader
