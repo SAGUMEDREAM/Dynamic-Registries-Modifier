@@ -11,6 +11,5 @@ public class DynamicRegistriesModifier implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-
 	}
 }

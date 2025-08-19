@@ -11,11 +11,9 @@ import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.entry.RegistryEntryInfo;
 import net.minecraft.registry.entry.RegistryEntryList;
 import net.minecraft.registry.tag.TagKey;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.Identifier;
 
 import java.util.*;
-import java.util.stream.Stream;
 
 
 @SuppressWarnings({"unchecked", "deprecation"})
