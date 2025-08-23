@@ -17,13 +17,13 @@ import java.util.Map;
 @Slf4j
 @Mixin(RegistryLoader.Entry.class)
 public class RegistryLoaderEntryMixin {
-    @Inject(method = "getLoader", at = @At("RETURN"), cancellable = true)
-    private static<T> void getLoader(Lifecycle lifecycle, Map<RegistryKey<?>, Exception> errors, CallbackInfoReturnable<RegistryLoader.Loader<T>> cir) {
-        RegistryLoader.Loader<T> loader = cir.getReturnValue();
-        MutableRegistry<T> mutableRegistry = loader.registry();
-        if (mutableRegistry instanceof SimpleRegistry<T> registry) {
-            DynamicRegistryManagerCallback.start(registry);
-        }
-//        System.out.println(mutableRegistry.getKey());
-    }
+//    @Inject(method = "getLoader", at = @At("RETURN"), cancellable = true)
+//    private static<T> void getLoader(Lifecycle lifecycle, Map<RegistryKey<?>, Exception> errors, CallbackInfoReturnable<RegistryLoader.Loader<T>> cir) {
+//        RegistryLoader.Loader<T> loader = cir.getReturnValue();
+//        MutableRegistry<T> mutableRegistry = loader.registry();
+//        if (mutableRegistry instanceof SimpleRegistry<T> registry) {
+//            DynamicRegistryManagerCallback.start(registry);
+//        }
+////        System.out.println(mutableRegistry.getKey());
+//    }
 }

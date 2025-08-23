@@ -1,17 +1,19 @@
 {
-	"required": true,
-	"package": "cc.thonly.registry_modifier.mixin",
-	"compatibilityLevel": "JAVA_21",
-	"mixins": [
-		"ExampleMixin",
-		"NamedAccessor",
-		"RegistryLoaderEntryMixin",
-		"SimpleRegistryMixin"
-	],
-	"injectors": {
-		"defaultRequire": 1
-	},
-	"overwrites": {
-		"requireAnnotations": true
+  "required": true,
+  "package": "cc.thonly.registry_modifier.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MinecraftServerMixin",
+    "NamedAccessor",
+    "RegistryLoaderEntryMixin",
+    "RegistryLoaderMixin",
+    "SaveLoadingMixin",
+    "SimpleRegistryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
 	}
 }

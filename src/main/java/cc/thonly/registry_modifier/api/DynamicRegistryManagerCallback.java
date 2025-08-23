@@ -1,56 +1,143 @@
 package cc.thonly.registry_modifier.api;
 
 import cc.thonly.registry_modifier.mixin.NamedAccessor;
+import com.mojang.serialization.Lifecycle;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import lombok.AllArgsConstructor;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.minecraft.registry.*;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.entry.RegistryEntryInfo;
 import net.minecraft.registry.entry.RegistryEntryList;
+import net.minecraft.registry.entry.RegistryEntryOwner;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 
-@SuppressWarnings({"unchecked", "deprecation"})
+@SuppressWarnings({"unchecked"})
 public interface DynamicRegistryManagerCallback {
-    List<Builder<?>> CALLBACKS = new ArrayList<>();
+    class Table {
+        public static final Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> CACHED2IMPL = new Object2ObjectLinkedOpenHashMap<>();
 
-    static <T> void add(Builder<T> builder) {
-        CALLBACKS.add(builder);
+        public static void load(List<RegistryLoader.Loader<?>> registriesList) {
+            for (RegistryLoader.Loader<?> loader : registriesList) {
+                MutableRegistry<?> mutableRegistry = loader.registry();
+                CACHED2IMPL.put(mutableRegistry.getKey(), mutableRegistry);
+            }
+        }
     }
 
+    @Getter
+    class EntryWrapper {
+        final Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> wrapper;
+
+        EntryWrapper() {
+            this.wrapper = this.createWrapper();
+        }
+
+        public static EntryWrapper create() {
+            return new EntryWrapper();
+        }
+
+        Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> createWrapper() {
+            Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> wrapper = new Object2ObjectOpenHashMap<>();
+            Set<RegistryKey<? extends Registry<?>>> keys = new ObjectOpenHashSet<>();
+            keys.addAll(Registries.ROOT.getKeys());
+            keys.addAll(Table.CACHED2IMPL.keySet());
+            keys.addAll(KEY2BUILDER.keySet());
+            for (RegistryKey<? extends Registry<?>> key : keys) {
+                DeferredRegister<?> deferredRegister = new DeferredRegister<>(key, Lifecycle.stable());
+                puts(Registries.ROOT.get((RegistryKey<MutableRegistry<?>>) key), deferredRegister);
+                puts(Table.CACHED2IMPL.get(key), deferredRegister);
+                if (KEY2BUILDER.containsKey(key)) {
+                    puts(KEY2BUILDER.get(key).getDeferRegistry(), deferredRegister);
+                    puts(KEY2BUILDER.get(key).getInitializerRegistry(), deferredRegister);
+                }
+                wrapper.put(key, deferredRegister);
+            }
+            return wrapper;
+        }
+
+        @SuppressWarnings("rawtypes")
+        void puts(MutableRegistry<?> source, SimpleRegistry target) {
+            if (source == null) {
+                return;
+            }
+            for (Map.Entry<? extends RegistryKey<?>, ?> entry : source.getEntrySet()) {
+                RegistryKey<?> key = entry.getKey();
+                Object value = entry.getValue();
+                if (target.get(key) == null) {
+                    continue;
+                }
+                target.add(key, value, RegistryEntryInfo.DEFAULT);
+            }
+            if (source instanceof SimpleRegistry ss) {
+                Set<Map.Entry<TagKey, RegistryEntryList.Named>> set = ss.tags.entrySet();
+                for (Map.Entry<TagKey, RegistryEntryList.Named> mapEntry : set) {
+                    RegistryEntryList.Named named = mapEntry.getValue();
+                    RegistryEntryOwner owner = named.owner;
+                    TagKey tagKey = named.tag;
+                    List<? extends RegistryEntry<?>> entries = named.entries;
+                    if (owner != null && tagKey != null && entries != null) {
+                        Map<TagKey, RegistryEntryList.Named> tags = target.tags;
+                        if (!tags.containsKey(tagKey)) {
+                            tags.put(tagKey, NamedAccessor.callNew(owner, tagKey));
+                        }
+                        RegistryEntryList.Named namedList = tags.get(tagKey);
+                        if (namedList.entries == null) {
+                            namedList.entries = new ArrayList();
+                        }
+                        namedList.entries.addAll(entries);
+                    }
+                }
+            }
+        }
+    }
+
+    Map<RegistryKey<? extends Registry<?>>, Builder<?>> KEY2BUILDER = new Object2ObjectOpenHashMap<>();
+
     static void start(SimpleRegistry<?> registry) {
-        for (Builder<?> factory : CALLBACKS) {
+        for (Builder<?> factory : KEY2BUILDER.values()) {
             if (factory.registryKey.equals(registry.getKey())) {
-                factory.start(registry);
-//                System.out.println(registry);
+                factory.startBuild(registry);
             }
         }
 
     }
 
     static <T> Builder<T> createBuilder(RegistryKey<? extends Registry<T>> registryKey) {
-        return new Builder<>(registryKey);
+        return (Builder<T>) KEY2BUILDER.computeIfAbsent(registryKey, key -> new Builder<>(registryKey));
+    }
+
+    class DeferredRegister<T> extends SimpleRegistry<T> {
+
+        public DeferredRegister(RegistryKey key, Lifecycle lifecycle) {
+            super(key, lifecycle);
+        }
+
+        public DeferredRegister(RegistryKey key, Lifecycle lifecycle, boolean intrusive) {
+            super(key, lifecycle, intrusive);
+        }
     }
 
     @Getter
     @Slf4j
     class Builder<T> {
         private final RegistryKey<? extends Registry<T>> registryKey;
-        private final Map<Identifier, T> registries = new Object2ObjectLinkedOpenHashMap<>();
-        private final Map<Identifier, RegistryEntry<T>> entries = new Object2ObjectLinkedOpenHashMap<>();
-        private final Map<Identifier, RegistryEntryInfo> infos = new Object2ObjectLinkedOpenHashMap<>();
-        private final List<Info<T>> registryInfos = new ObjectArrayList<>();
-        private final List<TagKeyBuilder<T>> tagKeyBuilders = new ObjectArrayList<>();
+        private final DeferredRegister<T> deferRegistry;
+        private DeferredRegister<T> initializerRegistry;
+        private final List<RegistrableInitializer<T>> initializers = new ArrayList<>();
 
         protected Builder(RegistryKey<? extends Registry<T>> registryKey) {
             assert registryKey != null;
             this.registryKey = registryKey;
+            this.deferRegistry = new DeferredRegister<>(registryKey, Lifecycle.stable());
+            this.initializerRegistry = new DeferredRegister<>(registryKey, Lifecycle.stable());
         }
 
         public T register(Identifier key, T value) {
@@ -61,6 +148,14 @@ public interface DynamicRegistryManagerCallback {
             return register(key, RegistryEntry.of(value), info);
         }
 
+        public T register(RegistryKey<T> key, T value) {
+            return register(key, value, RegistryEntryInfo.DEFAULT);
+        }
+
+        public T register(RegistryKey<T> key, T value, RegistryEntryInfo info) {
+            return register(key.getValue(), RegistryEntry.of(value), info);
+        }
+
         public T register(Identifier key, RegistryEntry<T> value) {
             return register(key, value, RegistryEntryInfo.DEFAULT);
         }
@@ -68,108 +163,124 @@ public interface DynamicRegistryManagerCallback {
         public T register(Identifier key, RegistryEntry<T> registryEntry, RegistryEntryInfo info) {
             RegistryKey<T> registryKey = RegistryKey.of(this.registryKey, key);
             T value = registryEntry.value();
-            this.registries.put(key, value);
-            this.entries.put(key, registryEntry);
-            this.infos.put(key, info);
-            if (registryEntry instanceof RegistryEntry.Reference<T> reference) {
-                reference.setRegistryKey(registryKey);
-            }
-            this.registryInfos.add(new Info<>(registryKey, value, registryEntry, info));
+            this.deferRegistry.add(registryKey, value, info);
             return value;
         }
 
-        public void addTagBuilder(TagKeyBuilder<T>... tagKeyBuilder) {
-            this.tagKeyBuilders.addAll(Arrays.asList(tagKeyBuilder));
+        public void put(RegistrableInitializer<T> initializer) {
+            this.initializers.add(initializer);
         }
 
-        public synchronized void start(SimpleRegistry<?> sr) {
-            SimpleRegistry<T> registry = (SimpleRegistry<T>) sr;
-            this.build(registry);
-            this.buildTags(registry);
+        public void putTag(TagKey<T> tagKey, Consumer<List<T>> collector) {
+            List<T> temp = new ArrayList<>();
+            collector.accept(temp);
+            RegistryEntryList.Named<T> registryEntries = this.deferRegistry.tags.computeIfAbsent(tagKey, key -> NamedAccessor.callNew(this.deferRegistry, tagKey));
+            if (registryEntries.entries == null) {
+                registryEntries.entries = new ArrayList<>();
+            }
+            for (T value : temp) {
+                RegistryEntry<T> entry = this.deferRegistry.getEntry(value);
+                if (registryEntries.entries.contains(entry)) continue;
+                registryEntries.entries.add(entry);
+            }
         }
 
-        protected synchronized void build(SimpleRegistry<T> registry) {
-            for (Info<T> registryInfo : this.registryInfos) {
+        public synchronized void startBuild(SimpleRegistry<?> targetRegistry) {
+            SimpleRegistry<T> target = (SimpleRegistry<T>) targetRegistry;
+            this.build(this.deferRegistry, target);
+            this.initializerRegistry = new DeferredRegister<>(this.registryKey, Lifecycle.stable());
+            for (RegistrableInitializer<T> initializer : this.initializers) {
+                initializer.bootstrap(new Registerable<>() {
+                    @Override
+                    public RegistryEntry.Reference<T> register(RegistryKey<T> key, T value, Lifecycle lifecycle) {
+                        return initializerRegistry.add(key, value, RegistryEntryInfo.DEFAULT);
+                    }
+
+                    @SuppressWarnings("rawtypes")
+                    @Override
+                    public <S> RegistryEntryLookup<S> getRegistryLookup(RegistryKey<? extends Registry<? extends S>> registryRef) {
+                        return new RegistryEntryLookup<>() {
+                            final EntryWrapper entryWrapper = EntryWrapper.create();
+
+                            @Override
+                            public Optional<RegistryEntry.Reference<S>> getOptional(RegistryKey<S> key) {
+                                Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> wrapper = this.entryWrapper.getWrapper();
+                                MutableRegistry mutableRegistry = wrapper.get(key.getRegistryRef());
+                                if (mutableRegistry == null) {
+                                    return Optional.empty();
+                                }
+                                return mutableRegistry.getOptional(key);
+                            }
+
+                            @Override
+                            public Optional<RegistryEntryList.Named<S>> getOptional(TagKey<S> tag) {
+                                Map<RegistryKey<? extends Registry<?>>, MutableRegistry<?>> wrapper = this.entryWrapper.getWrapper();
+                                MutableRegistry mutableRegistry = wrapper.get(tag.registryRef());
+                                if (mutableRegistry == null) {
+                                    return Optional.empty();
+                                }
+                                return mutableRegistry.getOptional(tag);
+                            }
+                        };
+                    }
+                });
+            }
+            this.build(this.initializerRegistry, target);
+            this.buildTags(this.deferRegistry, target);
+        }
+
+        protected synchronized void build(SimpleRegistry<T> source, SimpleRegistry<T> target) {
+            for (Map.Entry<Identifier, RegistryEntry.Reference<T>> entry : source.idToEntry.entrySet()) {
+                Identifier key = entry.getKey();
+                RegistryKey<T> registryKey = RegistryKey.of(source.getKey(), key);
+                T value = entry.getValue().value();
                 try {
-                    RegistryKey<T> key = registryInfo.getKey();
-                    T value = registryInfo.getValue();
-                    if (       !registry.contains(key)
-                            && !registry.containsId(key.getValue())
-                            && !registry.idToEntry.containsKey(key.getValue())
-                            && !registry.valueToEntry.containsKey(value)
+                    if (!target.contains(registryKey)
+                            && !target.containsId(key)
+                            && !target.idToEntry.containsKey(key)
+                            && !target.valueToEntry.containsKey(value)
                     ) {
-                        registry.add(key, value, RegistryEntryInfo.DEFAULT);
+                        target.add(registryKey, value, RegistryEntryInfo.DEFAULT);
                     }
                 } catch (Exception err) {
-                    log.error("Can't add registry {}", registryInfo.getKey());
-                }
-            }
-//            for (Info<T> registryInfo : this.registryInfos) {
-//                if (!(registryInfo.registryEntry instanceof RegistryEntry.Reference<?>)) {
-//                    var reference = RegistryEntry.Reference.intrusive(registry, registryInfo.value);
-//                    registryInfo.registryEntry = reference;
-//                    reference.setRegistryKey(registryInfo.key);
-//                }
-//                registry.keyToEntry.remove(registryInfo.key);
-//                registry.idToEntry.remove(registryInfo.key.getValue());
-//                registry.valueToEntry.remove(registryInfo.value);
-//                registry.entryToRawId.removeInt(registryInfo.value);
-//                registry.keyToEntryInfo.remove(registryInfo.key);
-//            }
-//            for (Info<T> registryInfo : this.registryInfos) {
-//                if (!(registryInfo.value instanceof RegistryEntry.Reference<?>)) continue;
-//                var reference = (RegistryEntry.Reference<T>) registryInfo.value;
-//                registry.keyToEntry.put(registryInfo.key, reference);
-//                registry.idToEntry.put(registryInfo.key.getValue(), reference);
-//                registry.valueToEntry.put(registryInfo.value, reference);
-//                int next = registry.rawIdToEntry.size();
-//                registry.entryToRawId.put(registryInfo.value, next);
-//                registry.keyToEntryInfo.put(registryInfo.key, registryInfo.info);
-//                registry.getLifecycle().add(registryInfo.info.lifecycle());
-//            }
-        }
-
-        protected void buildTags(SimpleRegistry<T> registry) {
-            for (TagKeyBuilder<T> tagKeyBuilder : this.tagKeyBuilders) {
-                RegistryEntryList.Named<T> named = registry.tags.computeIfAbsent(tagKeyBuilder.tagKey, x -> NamedAccessor.callNew(registry, tagKeyBuilder.tagKey));
-
-                for (T value : tagKeyBuilder.values) {
-                    RegistryEntry<T> entry = registry.getEntry(value);
-                    if (named.entries != null) {
-                        named.entries.add(entry);
-                    } else {
-                        named.entries = new ArrayList<>();
-                    }
+                    log.error("Can't add value for registry {}", registryKey);
                 }
             }
         }
 
-        public static <T> Builder<T> create(RegistryKey<? extends Registry<T>> registryKey) {
-            return new Builder<>(registryKey);
+        protected void buildTags(SimpleRegistry<T> sources, SimpleRegistry<T> target) {
+            for (Map.Entry<TagKey<T>, RegistryEntryList.Named<T>> mapEntry : sources.tags.entrySet()) {
+                TagKey<T> key = mapEntry.getKey();
+                RegistryEntryList.Named<T> value = mapEntry.getValue();
+                RegistryEntryList.Named<T> named = target.tags.computeIfAbsent(key, x -> NamedAccessor.callNew(target, key));
+                if (named.entries == null) {
+                    named.entries = new ArrayList<>();
+                }
+                if (isImmutableList(named.entries)) {
+                    named.entries = new ArrayList<>(named.entries);
+                }
+                if (value.entries != null) {
+                    named.entries.addAll(value.entries);
+                }
+
+            }
         }
 
-        @Getter
-        @AllArgsConstructor
-        public static class Info<T> {
-            RegistryKey<T> key;
-            T value;
-            RegistryEntry<T> registryEntry;
-            RegistryEntryInfo info;
+        private boolean isImmutableList(List<?> list) {
+            if (list instanceof com.google.common.collect.ImmutableList) {
+                return true;
+            }
+            try {
+                list.add(null);
+                list.remove(null);
+                return false;
+            } catch (UnsupportedOperationException e) {
+                return true;
+            }
         }
 
-        @Getter
-        public static class TagKeyBuilder<T> {
-            private final TagKey<T> tagKey;
-            private final List<T> values = new ObjectArrayList<>();
-
-            public TagKeyBuilder(TagKey<T> tagKey) {
-                this.tagKey = tagKey;
-            }
-
-            public TagKeyBuilder<T> add(T... values) {
-                this.values.addAll(Arrays.asList(values));
-                return this;
-            }
+        public interface RegistrableInitializer<T> {
+            void bootstrap(Registerable<T> context);
         }
 
     }

@@ -7,6 +7,14 @@ accessible field net/minecraft/registry/SimpleRegistry rawIdToEntry Lit/unimi/ds
 accessible field net/minecraft/registry/SimpleRegistry entryToRawId Lit/unimi/dsi/fastutil/objects/Reference2IntMap;
 accessible field net/minecraft/registry/SimpleRegistry keyToEntryInfo Ljava/util/Map;
 accessible field net/minecraft/registry/SimpleRegistry tags Ljava/util/Map;
+accessible field net/minecraft/registry/entry/RegistryEntryList$Named owner Lnet/minecraft/registry/entry/RegistryEntryOwner;
+accessible field net/minecraft/registry/entry/RegistryEntryList$Named tag Lnet/minecraft/registry/tag/TagKey;
 accessible field net/minecraft/registry/entry/RegistryEntryList$Named entries Ljava/util/List;
+accessible field net/minecraft/registry/Registries ROOT Lnet/minecraft/registry/MutableRegistry;
 accessible class net/minecraft/registry/RegistryLoader$RegistryLoadable
 accessible class net/minecraft/registry/RegistryLoader$Loader
+accessible field net/minecraft/registry/SimpleRegistry frozen Z
+accessible method net/minecraft/registry/SimpleRegistry assertNotFrozen ()V
+extendable method net/minecraft/registry/SimpleRegistry assertNotFrozen ()V
+accessible method net/minecraft/registry/SimpleRegistry assertNotFrozen (Lnet/minecraft/registry/RegistryKey;)V
+extendable method net/minecraft/registry/SimpleRegistry assertNotFrozen (Lnet/minecraft/registry/RegistryKey;)V

@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(RegistryEntryList.Named.class)
 public interface NamedAccessor<T> {
+
     @Accessor("owner")
     RegistryEntryOwner<T> getOwner();
 
